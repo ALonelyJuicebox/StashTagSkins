@@ -1,6 +1,7 @@
-
 #Script assumes localhost and Stash's default port (9999), but this can be alternatively defined
 param($StashAddress= "localhost:9999")
+
+clear-host
 
 #Set the GraphAPI endpoint
 $graphURI = "http://$stashAddress/graphql"
@@ -88,12 +89,12 @@ function Export-TagLibraryBackup{
     else{
         write-host "`n Hmm...something went wrong while generating a backup of your current tags."
         read-host "Press [Enter] to exit "
-        exit
+        return
     }
 }
 
 ## Main Script
-
+write-host "- Stash Tag Skins - "
 #Checking to ensure the path to the Tag libraries is in a known place
 $LibraryRoot = "$psscriptpath$($directorySlash)Library"
 if (!(test-path "$LibraryRoot"))
@@ -119,7 +120,7 @@ if(!(get-childitem -recurse -directory |Where-Object BaseName -like "Tag Library
     $AnswerA = New-Object System.Management.Automation.Host.ChoiceDescription '&Yes', "Will export a backup of your current tags to the Library folder of this script."
     $AnswerB = New-Object System.Management.Automation.Host.ChoiceDescription '&No', "Will not export a backup."
     $options = [System.Management.Automation.Host.ChoiceDescription[]]($AnswerA, $AnswerB)
-    $title = '- Backup your Current Tag Library'
+    $title = '[0 of 4] Backup your Current Tag Library'
     $message = "Before anything else, would you like to save a backup of your current Tags?"
     $result = $host.ui.PromptForChoice($title, $message, $options, 0)
     if ($result -eq 0) {
@@ -167,21 +168,23 @@ catch {
     return
 }
 
+Write-host "`n[1 of 4] Select a Tag Library `n-" -ForegroundColor White
 #List Child Libraries
+
 $children = Get-ChildItem -Directory -path $LibraryRoot
 $choice = 0
 $index = 1
-Write-Host " idx | $("Library Name".padRight(30)) | Tag Count" -ForegroundColor Cyan
+Write-Host " ID  | $("Library Name".padRight(40)) | Tag Count" -ForegroundColor Cyan
 foreach ($library in $children)
 {
     $tags = Get-ChildItem -Path $library.FullName
-    write-host " $($index.toString().padright(3)) | $($library.Name.PadRight(30," ")) | $($tags.count)"
+    write-host " $($index.toString().padright(3)) | $($library.Name.PadRight(40," ")) | $($tags.count)"
     $index++
 }
 while (!(($choice -lt $index) -and ($choice -gt 0)))
 {
-    Write-host "Which Tag Library?"
-    $choice = Read-Host
+    Write-host "`nWhich Tag Library do you want to switch to?"
+    $choice = Read-Host "Enter a number"
 }
 
 #Load the tags in memory so we can search them quickly for matching
@@ -199,11 +202,11 @@ Write-Progress -Activity "Parsing Tag Json" -Completed
 Write-Host "Loaded $($newTagParsed.count) tags"
 
 #Do we create new tags that don't exist yet?
-$AnswerTrue = New-Object System.Management.Automation.Host.ChoiceDescription '&Yes', "Creates new tags if we cannot find a matching tag already in the database."
-$AnswerFalse = New-Object System.Management.Automation.Host.ChoiceDescription '&No', "Skips tags that aren't yet in the database."
+$AnswerTrue = New-Object System.Management.Automation.Host.ChoiceDescription '&Yes', "Tags that are not in your Stash will be created"
+$AnswerFalse = New-Object System.Management.Automation.Host.ChoiceDescription '&No', "Tags that are not in your Stash will not be created"
 $options = [System.Management.Automation.Host.ChoiceDescription[]]($AnswerTrue, $AnswerFalse)
-$title = 'Create new tags'
-$message = "Do you want to create new tags that aren't already present?"
+$title = '[2 of 4] Create New Tags'
+$message = "If a tag in this Tag Library does not exist in your Stash, should we create a new tag?"
 $result = $host.ui.PromptForChoice($title, $message, $options, 1)
 if ($result -eq 0) {
     $createNewTags = $True
@@ -213,11 +216,11 @@ elseif ($result -eq 1) {
 }
 
 #Do we clear the existing images for tags that aren't in the new library?
-$AnswerTrue = New-Object System.Management.Automation.Host.ChoiceDescription '&Yes', "Clears existing images that are not matched to your new library."
-$AnswerFalse = New-Object System.Management.Automation.Host.ChoiceDescription '&No', "Keeps images that exist, but aren't replaced by your new library."
+$AnswerTrue = New-Object System.Management.Automation.Host.ChoiceDescription '&Yes', "Unmatched tags will be reset back to the default cleared state"
+$AnswerFalse = New-Object System.Management.Automation.Host.ChoiceDescription '&No', "Unmatched tags will keep whatever Tag Image they had before"
 $options = [System.Management.Automation.Host.ChoiceDescription[]]($AnswerTrue, $AnswerFalse)
-$title = 'Clear old images'
-$message = "Should we clear the image for tags that aren't matched?"
+$title = '[3 of 4] Clear out Images From Unmatched Tags'
+$message = "If a Tag in your Stash doesn't have a match in this Tag Library, should we clear out the Tag Image?"
 $result = $host.ui.PromptForChoice($title, $message, $options, 1)
 if ($result -eq 0) {
     $clearOldTags = $True
@@ -227,11 +230,11 @@ elseif ($result -eq 1) {
 }
 
 #If the new tag match is not blank, overwrite existing images?
-$AnswerTrue = New-Object System.Management.Automation.Host.ChoiceDescription '&Yes', "Updates tags which match with the new library."
+$AnswerTrue = New-Object System.Management.Automation.Host.ChoiceDescription '&Yes', "Updates tags even if they have an image."
 $AnswerFalse = New-Object System.Management.Automation.Host.ChoiceDescription '&No', "If an existing tag is matched but already has an image, nothing will be done."
 $options = [System.Management.Automation.Host.ChoiceDescription[]]($AnswerTrue, $AnswerFalse)
-$title = 'Overwrite existing images'
-$message = "If a tag matches a new library image, but the images are different, do you wish to import the new one?"
+$title = '[4 of 4] Overwrite existing Tag Images'
+$message = "If a matching Tag in your Stash already has a Tag Image, should we replace it?"
 $result = $host.ui.PromptForChoice($title, $message, $options, 0)
 if ($result -eq 0) {
     $overwriteImages = $True
