@@ -1,15 +1,15 @@
-#Parameters Go Before Requirements for some reason
-#Script assumes local host, but you can use some other location if you need to
+
+#Script assumes localhost and Stash's default port (9999), but this can be alternatively defined
 param($StashAddress= "localhost:9999")
 
 #Set the GraphAPI endpoint
 $graphURI = "http://$stashAddress/graphql"
 
-#Powershell Dependencys for this script
+#Powershell Dependencies
 #requires -modules PSGraphQL
 #requires -Version 7
 
-#Import Modules know that we know we have them
+#Import Modules now that we know we have them
 Import-Module PSGraphQL
 
 #Adjusting path delimeter based on Operating System
@@ -101,7 +101,7 @@ if (!(test-path "$LibraryRoot"))
     $LibraryRoot = ".$($directorySlash)Library"
     if (!(test-path "$LibraryRoot"))
     {
-        Write-Host "Please provide the path to the Library Folder"
+        Write-Host "Please provide the path to the Tag Library Folder"
         Write-Host " ex: c:\StashTagSkins\Library"
         $LibraryRoot = Read-Host
         if (!(Test-Path $LibraryRoot))
@@ -163,11 +163,11 @@ try {
 
 }
 catch {
-    Write-Error "Issue processing GRAPHQL query, your stash is misconfigured or incompatible."
+    Write-Error "There was an issue when this script tried to query your Stash instance. `nPlease make sure Stash is actively running and up to date "
     return
 }
 
-#List Child Librarys
+#List Child Libraries
 $children = Get-ChildItem -Directory -path $LibraryRoot
 $choice = 0
 $index = 1
@@ -293,7 +293,7 @@ foreach ($tag in $results.data.findTags.tags)
     
     #Did we find a tag match?
     if ($candidateTag){
-        #set updat to false, and chcek if we are allowed to update it with our config
+        #set update to false, and check if we are allowed to update it with our config
         $updateImage = $False
 
         if ($tag.image_path.contains("default=true"))
