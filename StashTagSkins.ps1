@@ -12,15 +12,126 @@ $graphURI = "http://$stashAddress/graphql"
 #Import Modules know that we know we have them
 Import-Module PSGraphQL
 
-#region Setup
-#Windows uses weird slashes
+#Adjusting path delimeter based on Operating System
 $directorySlash = "\"
 if (!$IsWindows){
     $directorySlash = "/"
 }
 
-#Testing GraphQL
-#Query the Stash Instance via GraphQL
+## Functions
+function Export-TagLibraryBackup{
+    #GQL mutation for pulling all tags from stash
+    $uri = "http://localhost:9999/graphql"
+    $gqlQuery = 'mutation exportObjects ($input: ExportObjectsInput!){
+        exportObjects(input: $input)  
+    }'
+    $gqlVariables = '{
+        "input": {
+            "tags": {
+                "all": true
+            },
+            "includeDependencies": true
+        }
+    }'
+
+    #Attempting to query Stash...
+    write-host "Querying Stash for all your tags...This may take a few moments!"
+    $uriToDownload = $null
+    try {
+        $uriToDownload = Invoke-GraphQLQuery -Query $gqlQuery -uri $uri -Variables $gqlvariables
+    
+    }
+    catch {
+        Write-Error "There was an issue when this script tried to query your Stash instance. `nPlease make sure Stash is actively running and up to date "
+        return
+    }
+
+    $uriToDownload = $uriToDownload.data.exportobjects #This gives us the URI sans the object bits that would otherwise surround that string
+    $pathToExportedTagLibraryZIP = "ExportedTagLibrary.zip"
+
+    Invoke-WebRequest -URI $uriToDownload -OutFile $pathToExportedTagLibraryZIP
+
+    #Now that the file actually exists, let's use get-item so it can be queried as an actual PS object (useful for calculating filesize)
+    $pathToExportedTagLibraryZIP = get-item $pathToExportedTagLibraryZIP
+
+    #Some of these Tag Libraries can get pretty big, especially if animated images are used. Let's warn the user if the backup they created is over 100 MB
+    #Don't mind the large number of zeros-- filesize is expressed in bytes by default
+    if ($pathToExportedTagLibraryZIP.length -gt 100000000){ 
+        $warnUserOfSize = $True
+    }
+
+    $TagLibraryBackupPath = "Tag Library Backup - " + (get-date -format "yyyy-MM-dd_HHmm")
+    $TagLibraryBackupPath = $LibraryRoot+$directorySlash+$TagLibraryBackupPath
+    $tempTagsFolderPath = $TagLibraryBackupPath + $directorySlash + "Tags"
+
+    #Now let's extract the zip to the library subfolder
+    Expand-Archive $pathToExportedTagLibraryZIP $TagLibraryBackupPath
+
+    #The ZIP extracts a subfolder inside our library folder named 'Tags'. Let's move all the JSON files up into the parent folder
+    Get-ChildItem -filter *.json -recurse | move-item -Destination {$_.Directory.Parent.FullName}
+
+    #Lastly, let's clean up by deleting the "Tags" folder and the zip file we downloaded
+    Remove-Item $tempTagsFolderPath -force
+    remove-item $pathToExportedTagLibraryZIP -force
+
+    if (test-path $TagLibraryBackupPath){
+        
+
+        if ($warnUserOfSize){
+            write-host "`nAll set! Your current tags have been backed up and you can revert at any time."
+            write-host "Note: You have a lot of large tag images! 🙂 `nThe Tag Library Backup we just generated was over 100 MB.`n"
+        }
+        else {
+            write-host "`nAll set! Your current tags have been backed up and you can revert at any time.`n"
+        }
+    }
+    else{
+        write-host "`n Hmm...something went wrong while generating a backup of your current tags."
+        read-host "Press [Enter] to exit "
+        exit
+    }
+}
+
+## Main Script
+
+#Checking to ensure the path to the Tag libraries is in a known place
+$LibraryRoot = "$psscriptpath$($directorySlash)Library"
+if (!(test-path "$LibraryRoot"))
+{
+    $LibraryRoot = ".$($directorySlash)Library"
+    if (!(test-path "$LibraryRoot"))
+    {
+        Write-Host "Please provide the path to the Library Folder"
+        Write-Host " ex: c:\StashTagSkins\Library"
+        $LibraryRoot = Read-Host
+        if (!(Test-Path $LibraryRoot))
+        {
+            Write-Host "The given folder path was not found $library" -ForegroundColor red
+            return
+        }
+    }
+}
+
+#Let's check to see if the user has a backup of their current tags before we begin.
+if(!(get-childitem -recurse -directory |Where-Object BaseName -like "Tag Library Backup*")){
+
+    #No backup tag library detected, so let's ask the user if they'd like to save one.
+    $AnswerA = New-Object System.Management.Automation.Host.ChoiceDescription '&Yes', "Will export a backup of your current tags to the Library folder of this script."
+    $AnswerB = New-Object System.Management.Automation.Host.ChoiceDescription '&No', "Will not export a backup."
+    $options = [System.Management.Automation.Host.ChoiceDescription[]]($AnswerA, $AnswerB)
+    $title = '- Backup your Current Tag Library'
+    $message = "Before anything else, would you like to save a backup of your current Tags?"
+    $result = $host.ui.PromptForChoice($title, $message, $options, 0)
+    if ($result -eq 0) {
+        write-host "`nOK, a backup will be created."
+        Export-TagLibraryBackup
+    }
+    else {
+        write-host "`nOK, a backup will not be created."
+    }
+}
+
+#Polling Stash for all tags
 $graphQuery = '
 query FindTags($filter: FindFilterType, $tag_filter: TagFilterType) {
     findTags(filter: $filter, tag_filter: $tag_filter) {
@@ -54,24 +165,6 @@ try {
 catch {
     Write-Error "Issue processing GRAPHQL query, your stash is misconfigured or incompatible."
     return
-}
-
-#Find the Library Root
-$LibraryRoot = "$psscriptpath$($directorySlash)Library"
-if (!(test-path "$LibraryRoot"))
-{
-    $LibraryRoot = ".$($directorySlash)Library"
-    if (!(test-path "$LibraryRoot"))
-    {
-        Write-Host "Please provide the path to the Library Folder"
-        Write-Host " ex: c:\StashTagSkins\Library"
-        $LibraryRoot = Read-Host
-        if (!(Test-Path $LibraryRoot))
-        {
-            Write-Host "File Not Found $library" -ForegroundColor red
-            return
-        }
-    }
 }
 
 #List Child Librarys
